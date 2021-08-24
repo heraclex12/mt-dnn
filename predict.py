@@ -18,6 +18,7 @@ def dump(path, data):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--task_def", type=str, default="experiments/glue/glue_task_def.yml")
+parser.add_argument("--task_list", type=str, default="seperate by comma.")
 parser.add_argument("--task", type=str)
 parser.add_argument("--task_id", type=int, help="the id of this task when training")
 
@@ -55,7 +56,7 @@ else:
 config = state_dict['config']
 config["cuda"] = args.cuda
 task_def = task_defs.get_task_def(prefix)
-task_def_list = [task_def]
+task_def_list = [task_defs.get_task_def(t) for t in args.task_list.split(',')]
 config['task_def_list'] = task_def_list
 ## temp fix
 config['fp16'] = False
@@ -63,7 +64,9 @@ config['answer_opt'] = 0
 config['adv_train'] = False
 del state_dict['optimizer']
 model = MTDNNModel(config, state_dict=state_dict)
-encoder_type = config.get('encoder_type', EncoderModelType.BERT)
+if args.cuda:
+  model.cuda()
+encoder_type = config.get('encoder_type', EncoderModelType.ROBERTA)
 # load data
 test_data_set = SingleTaskDataset(args.prep_input, False, maxlen=args.max_seq_len, task_id=args.task_id, task_def=task_def)
 collater = Collater(is_train=False, encoder_type=encoder_type)
@@ -72,7 +75,7 @@ test_data = DataLoader(test_data_set, batch_size=args.batch_size_eval, collate_f
 with torch.no_grad():
     test_metrics, test_predictions, scores, golds, test_ids = eval_model(model, test_data,
                                                                          metric_meta=metric_meta,
-                                                                         use_cuda=args.cuda, with_label=args.with_label)
+                                                                         device="cuda" if args.cuda else "cpu", with_label=args.with_label)
 
     results = {'metrics': test_metrics, 'predictions': test_predictions, 'uids': test_ids, 'scores': scores}
     dump(args.score, results)
